@@ -1,0 +1,150 @@
+import "ffi" as ffi
+import "lfs" as lfs
+
+-- vim has inspect builtin
+inspect = vim?.inspect ?? require "inspect"
+
+cdef = ffi.cdef [[
+  struct archive * 
+    archive_read_new(void);
+  int
+    archive_read_free(struct archive *);
+  const char *
+    archive_error_string(struct archive *);
+
+  int
+    archive_read_data_block(
+      struct archive *,
+      const void **,
+      size_t *,
+      int64_t *);
+  int
+    archive_write_data_block(
+      struct archive *,
+      const void *,
+      size_t,
+      int64_t);
+
+  struct archive *
+    archive_write_disk_new(void);
+  int
+    archive_write_disk_set_options(struct archive * arc, int flags);
+
+  int
+     archive_read_open_filename(
+       struct archive *,
+       const	char *filename,
+       size_t	block_size);
+  int
+    archive_read_support_format_all(struct archive *);
+  int
+    archive_read_support_filter_all(struct archive *);
+  int
+     archive_read_next_header(struct archive *,	struct archive_entry **);
+
+  const char *
+    archive_entry_pathname(struct archive_entry *);
+  void
+    archive_entry_set_pathname(struct archive_entry *, const char *);
+  int
+    archive_write_header(struct archive *, struct archive_entry *);
+  int
+    archive_entry_free(struct archive_entry *);
+
+  int
+    archive_format(struct archive *);
+  const char *
+    archive_format_name(struct archive *);
+]]
+
+lib = ffi.load "libarchive"
+
+class Archive
+  @libret =
+    OK: 0
+    EOF: 1
+    RETRY: -10
+    WARN: -20
+    FAIL: -25
+    FATAL: -30
+
+  new: (src, dst = lfs.currentdir!) =>
+    @path = src -- /path/to/archive/location.tgz
+    @dst = dst  -- /path/to/extract/location
+                -- ie a tgz{ file1.txt, file2.txt } with a dst of /tmp/extract writes:
+                --   * /tmp/extract/file1.txt
+                --   * /tmp/extract/file2.txt
+    @arc = nil
+    @rd = nil
+
+  valid: =>
+    @arc != nil
+
+  walk: =>
+    @arc = lib.archive_read_new!
+
+    unless lib.archive_read_support_format_all @arc
+      error "format_all: " .. lib.archive_error_string @arc
+    unless lib.archive_read_support_filter_all @arc
+      error "filter_all: " .. lib.archive_error_string @arc
+
+    unless lib.archive_read_open_filename @arc, @path, 1024*10
+      error "open_filename: " .. lib.archive_error_string @arc
+
+    dst = lib.archive_write_disk_new!
+    lib.archive_write_disk_set_options dst, 0
+
+    ent = ffi.new "struct archive_entry*[1]"
+    block = ffi.new "const void*[1]"
+    sz = ffi.new "size_t[1]"
+    offset = ffi.new "int64_t[1]"
+
+    while (lib.archive_read_next_header @arc, ent) == @@libret.OK
+      p = ffi.string(lib.archive_entry_pathname ent[0])
+
+      -- remove leading slash
+      -- should probably also remove any ".."?
+      -- someone smarter than me should figure this out
+      newp = (p\gsub "^/+", "")\gsub "-%.%./-", ""
+      newp = "#{ @dst }/#{ newp }"
+      lib.archive_entry_set_pathname ent[0], newp
+
+      -- writing the header actually creates the file itself. the ent path needs
+      -- to be modified prior to this (include @dst)
+      ok = lib.archive_write_header dst, ent[0]
+      unless ok == @@libret.OK
+        error "lacuna: failed writing header archive=\"#{ @path }\", file=\"#{ newp }\""
+
+      ok = lib.archive_read_data_block @arc, block, sz, offset
+      unless ok == @@libret.OK
+        error "lacuna: failed reading archive=\"#{ @path }\", file=\"#{ p }\""
+
+      ok = lib.archive_write_data_block dst, block[0], sz[0], offset[0]
+      unless ok == @libret.OK
+        error "lacuna: failed writing archive=\"#{ @path }\", file=\"#{ newp }\""
+    
+    -- D
+    --  I
+    --   D
+    --    Y
+    --     O
+    --      U
+    --       F
+    --        R
+    --         E
+    --          E
+    --           ?
+    -- Goodbye.
+    lib.archive_read_free @arc
+
+    -- TODO(@chrsm): temp, remove
+    collectgarbage!
+
+--[[a = Archive "larchive.tgz"--, "/tmp/extracttemp"
+a\walk!
+a = nil
+collectgarbage! -- ouija!?
+print "done"
+]]
+
+export default Archive
