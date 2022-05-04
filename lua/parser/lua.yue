@@ -1,0 +1,47 @@
+import "lsqlite3" as sqlite
+import "xmlua" as xmlua
+
+class Lua
+  @query = [[
+  SELECT
+    *
+  FROM
+    searchIndex
+  WHERE
+    name LIKE '%<QUERY_VALUE>%' ESCAPE '\'
+  ]]
+
+  new: (db_path) =>
+    @db = sqlite.open db_path
+
+  query: (v) =>
+    gots = {}
+    for r in @db\rows (@@query\gsub "<QUERY_VALUE>", v)
+      gots[] = r[4]
+
+    unless #gots > 0
+      error "no results"
+
+    gots
+
+  get: (file, frag) =>
+    fp, err = io.open file
+    if err
+      error "couldn't parse manual: #{ err }"
+
+    doc = fp\read "*a"
+      |> xmlua.HTML.parse
+
+    -- wow, now i get why people just embed a fucking browser.
+    -- basically, read up until the next hr, h2, or h3. /shrug
+    for i, v in ipairs doc\search "//a[@name='#{ frag }']"
+      -- jump up, we're in an h3
+      p = v\parent!
+      n = p\next!
+      while n and (n\name! != "hr") and (n\name! != "h2") and (n\name! != "h3")
+        c = (n\content!)\gsub "^%s*(.-)%s*$", "%1"
+        c = c\gsub "[\n\t]", " "
+        print c
+        n = n\next!
+
+export default Lua

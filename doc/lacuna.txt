@@ -1,0 +1,13 @@
+================================================================================
+                                                                   *lacuna.nvim*
+
+lacuna.nvim is^Hwill be a plugin that provides an interface into Dash doc sets.
+
+
+================================================================================
+                                                               *lacuna.contents*
+
+CONTENTS
+
+TODO
+
