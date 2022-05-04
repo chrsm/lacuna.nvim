@@ -34,6 +34,7 @@ class Lua
 
     -- wow, now i get why people just embed a fucking browser.
     -- basically, read up until the next hr, h2, or h3. /shrug
+    ret = ""
     for i, v in ipairs doc\search "//a[@name='#{ frag }']"
       -- jump up, we're in an h3
       p = v\parent!
@@ -41,7 +42,9 @@ class Lua
       while n and (n\name! != "hr") and (n\name! != "h2") and (n\name! != "h3")
         c = (n\content!)\gsub "^%s*(.-)%s*$", "%1"
         c = c\gsub "[\n\t]", " "
-        print c
+        ret ..= "#{ c }\n"
         n = n\next!
+
+    ret or "lacuna: nothing found"
 
 export default Lua

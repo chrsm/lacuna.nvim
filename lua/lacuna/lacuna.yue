@@ -1,0 +1,95 @@
+import "http.request" as request
+import "cjson" as json
+
+import "plenary" as plenary
+import "telescope.finders" as tsfinder
+import "telescope.pickers" as tspicker
+import "telescope.pickers.entry_display" as tsedisp
+import "telescope.config" as tsconf
+
+import "lacuna.archive" as larchive
+
+defcfg =
+  docset_url: "https://api.zealdocs.org/v1/docsets"
+  docset_redir_url: "https://go.zealdocs.org/d/<SOURCE>/<NAME>/latest"
+  download_timeout: 30
+
+  docset_path: vim.fn.expand "~/doctest"
+  sets:
+    * {
+      name: "lua",
+      idx: "docSet.dsidx"
+      file: vim.fn.expand "~/doctest/manual.html"
+    }
+
+menu = (results) ->
+  p = tspicker.new {}, {
+    prompt_title: "entries"
+    finder: tsfinder.new_table {
+      :results
+      entry_maker: (ent) ->
+        ent = { "entry-name", ent }
+        c = vim.o.columns
+        
+        disp = tsedisp.create {
+          separator: "|"
+          items:
+            * { width: 10 }
+            * { width: c }
+            * { remaining: true }
+        }
+
+        mkdisp = ->
+          disp {
+            { ent[1] }
+            { ent[2] }
+          }
+
+        {
+          value: ent
+          display: mkdisp
+          ordinal: "1 1"
+        }
+    }
+    sorter: tsconf.values.generic_sorter {}
+  }
+  
+  p\find!
+
+lacuna = {}
+
+lacuna.download_docset = (name) ->
+  req = with request.new_from_uri defcfg.docset_url
+    .headers\upsert "User-Agent", "curl/7.80.0"
+    .headers\append "X-Req-By", "lacuna.nvim"
+    .headers\append "Accept", "application/json"
+
+  h, r = req\go defcfg.download_timeout
+  unless h
+    error "lacuna: no headers from #{ defcfg.docset_url }"
+
+  b = r\get_body_as_string!
+  unless b
+    error "lacuna: no body from #{ defcfg.docset_url }"
+
+  data = json.decode b
+  for v in *data
+    source, name = v.sourceId, v.name
+
+    -- fetch it via zeal's redir server
+    -- then .. figure out how to unpack it
+  
+  true
+
+lacuna.find = (parser, name) ->
+  luap = require "lacuna.parser.#{ parser }"
+  p = luap "#{ defcfg.docset_path }/docSet.dsidx"
+
+  set = p\query "os.time"
+  error "no rows in set" unless #set>0
+
+  vp = vim.fn.expand "~/doctest/manual.html"
+  results = p\get vp, set[1]
+  menu { results }
+
+export default lacuna
