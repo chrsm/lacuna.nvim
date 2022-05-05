@@ -1,10 +1,12 @@
 import "http.request" as request
 import "cjson" as json
 
-import "plenary" as plenary
+import "telescope.actions" as tsactions
+import "telescope.actions.state" as tsactionstate
 import "telescope.finders" as tsfinder
 import "telescope.pickers" as tspicker
 import "telescope.pickers.entry_display" as tsedisp
+import "telescope.previewers" as tspreview
 import "telescope.config" as tsconf
 
 import "lacuna.archive" as larchive
@@ -32,33 +34,36 @@ defcfg =
 menu = (results) ->
   p = tspicker.new {}, {
     prompt_title: "entries"
+    title: (entry) ->
+      "title test"
     finder: tsfinder.new_table {
       :results
-      entry_maker: (ent) ->
-        ent = { "entry-name", ent }
-        c = vim.o.columns
-        
-        disp = tsedisp.create {
-          separator: "|"
-          items:
-            * { width: 10 }
-            * { width: c }
-            * { remaining: true }
-        }
-
-        mkdisp = ->
-          disp {
-            { ent[1] }
-            { ent[2] }
-          }
-
+      entry_maker: (v) ->
         {
-          value: ent
-          display: mkdisp
-          ordinal: "1 1"
+          value: v.content
+          ordinal: v.name
+          display: v.name
+          id: v
         }
+      title: (entry) ->
+        "title test"
+    }
+    previewer: tspreview.new_buffer_previewer {
+      define_preview: (entry, status) =>
+        vim.api.nvim_buf_set_lines @state.bufnr, 0, -1, true, entry.value
+        vim.api.nvim_win_set_option status.preview_win, 'wrap', true
     }
     sorter: tsconf.values.generic_sorter {}
+    attach_mappings: (bufnr, map) ->
+      tsactions.select_default\replace ->
+        tsactions.close bufnr
+
+        -- dunno what's useful to actually do here..
+        -- we definitely don't want to just paste shit into the buffer.
+        -- perhaps it'd be nice to open the content into an actual split?
+        -- sel = tsactionstate.get_selected_entry!
+
+      true
   }
   
   p\find!
@@ -69,18 +74,18 @@ lacuna.download_docset = (name) ->
   unless lacuna.config
     error "lacuna: no config provided; call lacuna.setup!"
 
-  req = with request.new_from_uri defcfg.docset_url
+  req = with request.new_from_uri lacuna.config.docset_url
     .headers\upsert "User-Agent", "curl/7.80.0"
     .headers\append "X-Req-By", "lacuna.nvim"
     .headers\append "Accept", "application/json"
 
-  h, r = req\go defcfg.download_timeout
+  h, r = req\go lacuna.config.download_timeout
   unless h
-    error "lacuna: no headers from #{ defcfg.docset_url }"
+    error "lacuna: no headers from #{ lacuna.config.docset_url }"
 
   b = r\get_body_as_string!
   unless b
-    error "lacuna: no body from #{ defcfg.docset_url }"
+    error "lacuna: no body from #{ lacuna.config.docset_url }"
 
   data = json.decode b
   downloaded = false
@@ -91,12 +96,12 @@ lacuna.download_docset = (name) ->
     unless sname == name
       continue
 
-    url = (defcfg.docset_redir_url\gsub "<SOURCE>", source)\gsub "<NAME>", sname
+    url = (lacuna.config.docset_redir_url\gsub "<SOURCE>", source)\gsub "<NAME>", sname
     req = with request.new_from_uri url
       .headers\append "user-agent", "curl/7.80.0"
       .headers\append "x-xeq-by", "lacuna.nvim"
 
-    head, stream = req\go defcfg.download_timeout
+    head, stream = req\go lacuna.config.download_timeout
     unless head
       return "lacuna: failed to fetch #{ url }"
 
@@ -120,12 +125,12 @@ lacuna.download_docset = (name) ->
     return "lacuna: #{ name } not found"
 
   -- unpack
-  arc = larchive dst, "#{ defcfg.docset_path }/#{ name }"
+  arc = larchive dst, "#{ lacuna.config.docset_path }/#{ name }"
   arc\unpack!
   
   -- TODO: should just make this a notification, but dunno if there's an API.
   print "lacuna: #{ name } downloaded and unpacked!"
-  "lacuna: #{ name } downloaded as #{ dst }, unpacked to #{ defcfg.docset_path }/#{ name }"
+  "lacuna: #{ name } downloaded as #{ dst }, unpacked to #{ lacuna.config.docset_path }/#{ name }"
 
 lacuna.find = (docset, query) ->
   unless lacuna.config
@@ -139,18 +144,19 @@ lacuna.find = (docset, query) ->
   parser = known.parser
 
   luap = require "lacuna.parser.#{ parser }"
-  p = luap "#{ defcfg.docset_path }/#{ docset }/#{ known.expand }/docSet.dsidx"
+  p = luap "#{ lacuna.config.docset_path }/#{ docset }/#{ known.expand }/docSet.dsidx"
 
-  entries = p\query query
+  entries = p\run_query query
   error "no rows in set" unless #entries > 0
 
+  results = {}
   for v in *entries
     vp = "#{ lacuna.config.docset_path }/#{ docset }/#{ known.expand }/Documents/#{ v.loc }"
-    results = p\get vp, v
-    for vv in *results
-      print "result", vv.entry.value, vv.content
+    r = p\get vp, v
+    unless #r == 0
+      results[] = v for v in *r
 
-  --menu { results }
+  menu results
 
 lacuna.setup = (opt = {}) ->
   lacuna.config = vim.tbl_deep_extend "force", defcfg, opt

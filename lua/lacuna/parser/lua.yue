@@ -1,47 +1,14 @@
 import "lsqlite3" as sqlite
 import "xmlua" as xmlua
 
-class Lua
-  -- if there's no search index, we need to create one.
-  -- zeal does this in the app rather than precreating them.
-  -- /shrug
-  @view =[[
-  CREATE VIEW IF NOT EXISTS searchIndex AS
-    SELECT
-      ztokenname AS name,
-      ztypename AS type,
-      zpath AS path,
-      zanchor AS fragment
-    FROM
-      ztoken
-    INNER JOIN
-      ztokenmetainformation
-    ON
-      ztoken.zmetainformation = ztokenmetainformation.z_pk
-    INNER JOIN
-      zfilepath
-    ON
-      ztokenmetainformation.zfile = zfilepath.z_pk
-    INNER JOIN
-      ztokentype
-    ON
-      ztoken.ztokentype = ztokentype.z_pk
-  ]]
+import "lacuna.parser.base" as Base
 
-  @query = [[
-  SELECT
-    *
-  FROM
-    searchIndex
-  WHERE
-    name LIKE '%<QUERY_VALUE>%' ESCAPE '\'
-  ]]
-
+class Lua extends Base
   new: (db_path) =>
     @db = sqlite.open db_path
     @db\exec @@view
 
-  query: (v) =>
+  run_query: (v) =>
     gots = {}
     for r in @db\rows (@@query\gsub "<QUERY_VALUE>", v)
       gots[] = {
@@ -72,24 +39,27 @@ class Lua
     -- basically, read up until the next hr, h2, or h3. /shrug
     ret = {}
     for i, v in ipairs entries
-      c = ""
+      c = {}
       for i, v in ipairs doc\search "//a[@name='#{ v.frag }']"
         -- jump up, we're in an h3
         p = v\parent!
         n = p\next!
         while n and (n\name! != "hr") and (n\name! != "h2") and (n\name! != "h3")
-          content = ((n\content!)\gsub "^%s*(.-)%s*$", "%1")\gsub "[\n\t]", " "
+          --content = ((n\content!)\gsub "^%s*(.-)%s*$", "%1")
+
+          -- yuck. formatting here is particularly bad.. what to do?
+          content = (n\content!)\gsub "\n\n\n", "\n"
+          for ln in content\gmatch "([^\n]*)\n?"
+            c[] = ln
+
           n = n\next!
 
-          unless #content > 0
-            continue
-          else
-            c ..= content
-
       ret[] =
+        name: v.value
         entry: v
         content: c
+        search_keys: v.frag
 
-    ret or { "lacuna: nothing found" }
+    ret
 
 export default Lua

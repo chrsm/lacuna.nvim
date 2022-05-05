@@ -1,0 +1,37 @@
+class Base
+  -- if there's no search index, we need to create one.
+  -- zeal does this in the app rather than precreating them.
+  -- /shrug
+  @view =[[
+  CREATE VIEW IF NOT EXISTS searchIndex AS
+    SELECT
+      ztokenname AS name,
+      ztypename AS type,
+      zpath AS path,
+      zanchor AS fragment
+    FROM
+      ztoken
+    INNER JOIN
+      ztokenmetainformation
+    ON
+      ztoken.zmetainformation = ztokenmetainformation.z_pk
+    INNER JOIN
+      zfilepath
+    ON
+      ztokenmetainformation.zfile = zfilepath.z_pk
+    INNER JOIN
+      ztokentype
+    ON
+      ztoken.ztokentype = ztokentype.z_pk
+  ]]
+
+  @query = [[
+  SELECT
+    *
+  FROM
+    searchIndex
+  WHERE
+    name LIKE '%<QUERY_VALUE>%' ESCAPE '\'
+  ]]
+
+export default Base
