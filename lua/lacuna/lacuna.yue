@@ -15,12 +15,19 @@ defcfg =
   download_timeout: 30
 
   docset_path: vim.fn.expand "~/doctest"
-  sets:
-    * {
-      name: "lua",
-      idx: "docSet.dsidx"
-      file: vim.fn.expand "~/doctest/manual.html"
-    }
+
+  known:
+    ["Lua_5.2"]:
+      parser: "lua"
+      expand: "Lua.docset/Contents/Resources"
+    ["Lua_5.3"]:
+      parser: "lua"
+      expand: "Lua.docset/Contents/Resources"
+    ["Lua_5.4"]:
+      parser: "lua"
+      expand: "Lua.docset/Contents/Resources"
+
+  sets: {}
 
 menu = (results) ->
   p = tspicker.new {}, {
@@ -59,6 +66,9 @@ menu = (results) ->
 lacuna = {}
 
 lacuna.download_docset = (name) ->
+  unless lacuna.config
+    error "lacuna: no config provided; call lacuna.setup!"
+
   req = with request.new_from_uri defcfg.docset_url
     .headers\upsert "User-Agent", "curl/7.80.0"
     .headers\append "X-Req-By", "lacuna.nvim"
@@ -73,23 +83,87 @@ lacuna.download_docset = (name) ->
     error "lacuna: no body from #{ defcfg.docset_url }"
 
   data = json.decode b
+  downloaded = false
+  dst = nil
   for v in *data
-    source, name = v.sourceId, v.name
+    source, sname = v.sourceId, v.name
 
-    -- fetch it via zeal's redir server
-    -- then .. figure out how to unpack it
+    unless sname == name
+      continue
+
+    url = (defcfg.docset_redir_url\gsub "<SOURCE>", source)\gsub "<NAME>", sname
+    req = with request.new_from_uri url
+      .headers\append "user-agent", "curl/7.80.0"
+      .headers\append "x-xeq-by", "lacuna.nvim"
+
+    head, stream = req\go defcfg.download_timeout
+    unless head
+      return "lacuna: failed to fetch #{ url }"
+
+    dst = "/tmp/lacuna-#{ sname }.dash"
+    fp, err = io.open dst, "w+"
+    if err
+      error "lacuna: failed to open #{ dst }: #{ err }"
+
+    s = stream\get_body_as_string!
+    -- stream\save_body_to_file doesn't write the last 1kb? :think:
+    -- look into that maybe file a bug
+
+    fp\write s
+    fp\close!
+    s = nil
+
+    downloaded = true
+    break
+
+  unless downloaded
+    return "lacuna: #{ name } not found"
+
+  -- unpack
+  arc = larchive dst, "#{ defcfg.docset_path }/#{ name }"
+  arc\unpack!
   
-  true
+  -- TODO: should just make this a notification, but dunno if there's an API.
+  print "lacuna: #{ name } downloaded and unpacked!"
+  "lacuna: #{ name } downloaded as #{ dst }, unpacked to #{ defcfg.docset_path }/#{ name }"
 
-lacuna.find = (parser, name) ->
+lacuna.find = (docset, query) ->
+  unless lacuna.config
+    error "lacuna: no config provided; call lacuna.setup!"
+
+  known = if lacuna.config.known[docset]
+    lacuna.config.known[docset]
+  else
+    error "lacuna: no parser found for #{ parser }"
+
+  parser = known.parser
+
   luap = require "lacuna.parser.#{ parser }"
-  p = luap "#{ defcfg.docset_path }/docSet.dsidx"
+  p = luap "#{ defcfg.docset_path }/#{ docset }/#{ known.expand }/docSet.dsidx"
 
-  set = p\query "os.time"
-  error "no rows in set" unless #set>0
+  entries = p\query query
+  error "no rows in set" unless #entries > 0
 
-  vp = vim.fn.expand "~/doctest/manual.html"
-  results = p\get vp, set[1]
-  menu { results }
+  for v in *entries
+    vp = "#{ lacuna.config.docset_path }/#{ docset }/#{ known.expand }/Documents/#{ v.loc }"
+    results = p\get vp, v
+    for vv in *results
+      print "result", vv.entry.value, vv.content
+
+  --menu { results }
+
+lacuna.setup = (opt = {}) ->
+  lacuna.config = vim.tbl_deep_extend "force", defcfg, opt
+
+  -- discover current sets
+  for f in lfs.dir lacuna.config.docset_path
+    continue if f == "." or f == ".."
+
+    attr = lfs.attributes "#{ lacuna.config.docset_path }/#{ f }"
+    continue unless attr.mode == "directory"
+
+    lacuna.config.sets[] = f
+
+  nil
 
 export default lacuna

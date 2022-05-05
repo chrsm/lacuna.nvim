@@ -47,6 +47,8 @@ cdef = ffi.cdef [[
   void
     archive_entry_set_pathname(struct archive_entry *, const char *);
   int
+    archive_entry_size(struct archive_entry *);
+  int
     archive_write_header(struct archive *, struct archive_entry *);
   int
     archive_entry_free(struct archive_entry *);
@@ -80,7 +82,7 @@ class Archive
   valid: =>
     @arc != nil
 
-  walk: =>
+  unpack: =>
     @arc = lib.archive_read_new!
 
     unless lib.archive_read_support_format_all @arc
@@ -115,12 +117,15 @@ class Archive
       unless ok == @@libret.OK
         error "lacuna: failed writing header archive=\"#{ @path }\", file=\"#{ newp }\""
 
+      unless (lib.archive_entry_size ent[0]) > 0
+        continue
+
       ok = lib.archive_read_data_block @arc, block, sz, offset
       unless ok == @@libret.OK
-        error "lacuna: failed reading archive=\"#{ @path }\", file=\"#{ p }\""
+        error "lacuna: failed reading archive=\"#{ @path }\", file=\"#{ p }\", sz=#{ sz[0] }, ofs=#{ offset[0] }"
 
       ok = lib.archive_write_data_block dst, block[0], sz[0], offset[0]
-      unless ok == @libret.OK
+      unless ok == @@libret.OK
         error "lacuna: failed writing archive=\"#{ @path }\", file=\"#{ newp }\""
     
     -- D
