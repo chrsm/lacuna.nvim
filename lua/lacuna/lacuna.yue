@@ -136,15 +136,16 @@ lacuna.find = (docset, query) ->
   unless lacuna.config
     error "lacuna: no config provided; call lacuna.setup!"
 
+  unless lacuna.config.sets[docset]
+    error "lacuna: docset not downloaded yet, run lacuna.download_docset \"#{ docset }\""
+
   known = if lacuna.config.known[docset]
     lacuna.config.known[docset]
   else
-    error "lacuna: no parser found for #{ parser }"
-
-  parser = known.parser
+    error "lacuna: no parser found for #{ docset }"
 
   -- allow any valid parser to be used; just implement `run_query` and `get`
-  luap = require parser
+  luap = require known.parser
   p = luap "#{ lacuna.config.docset_path }/#{ docset }/#{ known.expand }/docSet.dsidx"
 
   entries = p\run_query query
@@ -169,7 +170,7 @@ lacuna.setup = (opt = {}) ->
     attr = lfs.attributes "#{ lacuna.config.docset_path }/#{ f }"
     continue unless attr.mode == "directory"
 
-    lacuna.config.sets[] = f
+    lacuna.config.sets[f] = true
 
   nil
 
