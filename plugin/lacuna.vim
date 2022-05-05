@@ -9,4 +9,4 @@ EOF
 endfunction
 
 nnoremap <leader>pra :call ReloadLacuna()<CR>
-nnoremap <leader>ptt :lua require("lacuna").find("lua", "")<CR>
+nnoremap <leader>ptt :lua require("lacuna").find("Lua_5.4", "os.")<CR>
