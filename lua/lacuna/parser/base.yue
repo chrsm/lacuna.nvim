@@ -27,11 +27,20 @@ class Base
 
   @query = [[
   SELECT
-    *
+    name, type, path
   FROM
     searchIndex
   WHERE
     name LIKE '%<QUERY_VALUE>%' ESCAPE '\'
   ]]
+
+  strip_dash_meta: (v) =>
+    v\gsub "(<dash_entry_.+>)", ""
+
+  strip_frag: (v) =>
+    v\gsub "^(.+)#.+$", "%1"
+
+  get_frag: (v) =>
+    v\gsub "^.+#(.+)$", "%1"
 
 export default Base

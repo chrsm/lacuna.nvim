@@ -3,10 +3,9 @@ import "xmlua" as xmlua
 
 import "lacuna.parser.base" as Base
 
-class Lua extends Base
+class Go extends Base
   new: (db_path) =>
     @db = sqlite.open db_path
-    @db\exec @@view
 
   run_query: (v) =>
     gots = {}
@@ -18,6 +17,7 @@ class Lua extends Base
         frag: @\get_frag r[3]
       }
 
+    print vim.inspect gots
     gots
 
   get: (file, entries) =>
@@ -28,6 +28,8 @@ class Lua extends Base
     unless entries[1]
       entries = { entries }
 
+    print "lacuna-go: parse #{ file }"
+
     fp, err = io.open file
     if err
       error "couldn't parse manual: #{ err }"
@@ -36,27 +38,27 @@ class Lua extends Base
       |> xmlua.HTML.parse
 
     -- wow, now i get why people just embed a fucking browser.
-    -- basically, read up until the next hr, h2 or h3. /shrug
+    -- basically, read up until the next hr, h2, or h3. /shrug
     ret = {}
     for i, v in ipairs entries
       c = {}
       for i, v in ipairs doc\search "//a[@name='#{ v.frag }']"
-        -- jump up, we're in an h3
-        p = v\parent!
-        n = p\next!
-        while n and (n\name! != "hr") and (n\name! != "h2") and (n\name! != "h3")
+        -- get next until details/example
+        n = v\next!
+        while n and n\name! != "details"
           content = n\content!
           for ln in content\gmatch "([^\n]*)\n?"
             c[] = ln
 
           n = n\next!
 
+      print vim.inspect c
       ret[] =
-        name: v.value
+        name: v.name
         entry: v
         content: c
         search_keys: v.frag
 
     ret
 
-export default Lua
+export default Go

@@ -1,6 +1,7 @@
 import "http.request" as request
 import "cjson" as json
 
+import "plenary.job" as pjob
 import "telescope.actions" as tsactions
 import "telescope.actions.state" as tsactionstate
 import "telescope.finders" as tsfinder
@@ -19,6 +20,9 @@ defcfg =
   docset_path: vim.fn.expand "~/doctest"
 
   known:
+    ["Go"]:
+      parser: "lacuna.parser.go"
+      expand: "Go.docset/Contents/Resources"
     ["Lua_5.2"]:
       parser: "lacuna.parser.lua"
       expand: "Lua.docset/Contents/Resources"
@@ -50,7 +54,16 @@ menu = (results) ->
     }
     previewer: tspreview.new_buffer_previewer {
       define_preview: (entry, status) =>
-        vim.api.nvim_buf_set_lines @state.bufnr, 0, -1, true, entry.value
+        -- i don't like this :-)
+        unless entry.cache
+          job = pjob\new {
+            command: 'glow'
+            args: { '-w', '120', '-' }
+            writer: table.concat entry.value, "\n"
+          }
+          entry.cache = job\sync!
+
+        vim.api.nvim_buf_set_lines @state.bufnr, 0, -1, true, entry.cache
         vim.api.nvim_win_set_option status.preview_win, 'wrap', true
     }
     sorter: tsconf.values.generic_sorter {}
@@ -153,7 +166,7 @@ lacuna.find = (docset, query) ->
 
   results = {}
   for v in *entries
-    vp = "#{ lacuna.config.docset_path }/#{ docset }/#{ known.expand }/Documents/#{ v.loc }"
+    vp = "#{ lacuna.config.docset_path }/#{ docset }/#{ known.expand }/Documents/#{ v.path }"
     r = p\get vp, v
     unless #r == 0
       results[] = v for v in *r

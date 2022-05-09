@@ -23,6 +23,7 @@ packer.startup (use) ->
   use_rocks "lsqlite3"
   use_rocks "xmlua"
   use_rocks "luafilesystem"
+  use_rocks "lua-cjson"
 
   use "chrsm/lacuna.nvim"
 ```
